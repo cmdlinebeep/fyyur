@@ -4,7 +4,9 @@ SECRET_KEY = os.urandom(32)
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 # Enable debug mode.
-DEBUG = True
+# DEBUG = True
+# Doing through command line since running with 'flask run'
+SQLALCHEMY_TRACK_MODIFICATIONS = False
 
 # Connect to the database
 
