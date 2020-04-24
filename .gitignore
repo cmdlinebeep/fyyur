@@ -5,6 +5,7 @@ venv
 # My excludes
 *.log
 notes.txt
+*.png
 
 # OS generated files #
 ######################
