@@ -5,7 +5,7 @@
 import json
 import dateutil.parser
 import babel
-from flask import Flask, render_template, request, Response, flash, redirect, url_for
+from flask import Flask, render_template, request, Response, flash, redirect, url_for, abort
 from flask_moment import Moment
 from flask_sqlalchemy import SQLAlchemy
 import logging
@@ -13,6 +13,8 @@ from logging import Formatter, FileHandler
 #from flask_wtf import FlaskForm  (not used here but in forms.py)
 from forms import *
 from flask_migrate import Migrate
+from datetime import datetime
+import re
 
 #----------------------------------------------------------------------------#
 # App Config.
@@ -119,7 +121,7 @@ class Show(db.Model):
     __tablename__ = 'Show'
 
     id = db.Column(db.Integer, primary_key=True)
-    start_time = db.Column(db.DateTime, nullable=False)                             # Start time required
+    start_time = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)    # Start time required field
 
     artist_id = db.Column(db.Integer, db.ForeignKey('Artist.id'), nullable=False)   # Foreign key is the tablename.pk
     venue_id = db.Column(db.Integer, db.ForeignKey('Venue.id'), nullable=False)
@@ -161,27 +163,69 @@ def index():
 def venues():
     # TODO: replace with real venues data.
     #       num_shows should be aggregated based on number of upcoming shows per venue.
-    data = [{
-        "city": "San Francisco",
-        "state": "CA",
-        "venues": [{
-            "id": 1,
-            "name": "The Musical Hop",
-            "num_upcoming_shows": 0,
-        }, {
-            "id": 3,
-            "name": "Park Square Live Music & Coffee",
-            "num_upcoming_shows": 1,
-        }]
-    }, {
-        "city": "New York",
-        "state": "NY",
-        "venues": [{
-            "id": 2,
-            "name": "The Dueling Pianos Bar",
-            "num_upcoming_shows": 0,
-        }]
-    }]
+
+    # Get data on the venues and populate the data list.  Grouped by City
+    venues = Venue.query.order_by('state').order_by('city').all() #  Order_by state first should handle Rochester, MI and Rochester, NY correctly
+
+    data = []   # A list of dictionaries, where city, state, and venues are dictionary keys
+
+    # Create a set of all the cities/states combinations uniquely
+    cities_states = set()
+    for venue in venues:
+        cities_states.add( (venue.city, venue.state) )  # Add tuple
+    
+    now = datetime.now()    # Don't get this over and over in a loop!
+
+    # Now iterate over the unique values to seed the data dictionary with city/state locations
+    for loc in cities_states:
+        # For this location, see if there are any venues there, and add if so
+        venues_list = []
+        for venue in venues:
+            if (venue.city == loc[0]) and (venue.state == loc[1]):
+
+                # If we've got a venue to add, check how many upcoming shows it has
+                venue_shows = Show.query.filter_by(venue_id=venue.id).all()
+                num_upcoming = 0
+                for show in venue_shows:
+                    if show.start_time > now:
+                        num_upcoming += 1
+
+                venues_list.append({
+                    "id": venue.id,
+                    "name": venue.name,
+                    "num_upcoming_shows": num_upcoming
+                })
+
+        # After all venues are added to the list for a given location, add it to the data dictionary
+        data.append({
+            "city": loc[0],
+            "state": loc[1],
+            "venues": venues_list
+        })
+
+    print(data)
+
+    # data = [{
+    #     "city": "San Francisco",
+    #     "state": "CA",
+    #     "venues": [{
+    #         "id": 1,
+    #         "name": "The Musical Hop",
+    #         "num_upcoming_shows": 0,
+    #     }, {
+    #         "id": 3,
+    #         "name": "Park Square Live Music & Coffee",
+    #         "num_upcoming_shows": 1,
+    #     }]
+    # }, {
+    #     "city": "New York",
+    #     "state": "NY",
+    #     "venues": [{
+    #         "id": 2,
+    #         "name": "The Dueling Pianos Bar",
+    #         "num_upcoming_shows": 0,
+    #     }]
+    # }]
     return render_template('pages/venues.html', areas=data)
 
 
@@ -205,6 +249,15 @@ def search_venues():
 def show_venue(venue_id):
     # shows the venue page with the given venue_id
     # TODO: replace with real venue data from the venues table, using venue_id
+
+
+
+    #     image_link = db.Column(db.String(500))
+    # website = db.Column(db.String(120))
+    # seeking_talent = db.Column(db.Boolean, default=False)
+    # seeking_description 
+
+
     data1 = {
         "id": 1,
         "name": "The Musical Hop",
@@ -298,15 +351,71 @@ def create_venue_form():
 
 @app.route('/venues/create', methods=['POST'])
 def create_venue_submission():
-    # TODO: insert form data as a new Venue record in the db, instead
-    # TODO: modify data to be the data object returned from db insertion
+    # FIXME: Make a constraint when adding venues that they are unique per city/state, otherwise flash a warning
+    
+    form = VenueForm()
 
-    # on successful db insert, flash success
-    flash('Venue ' + request.form['name'] + ' was successfully listed!')
-    # TODO: on unsuccessful db insert, flash an error instead.
-    # e.g., flash('An error occurred. Venue ' + data.name + ' could not be listed.')
-    # see: http://flask.pocoo.org/docs/1.0/patterns/flashing/
-    return render_template('pages/home.html')
+    name = form.name.data.strip()
+    city = form.city.data.strip()
+    state = form.state.data
+    address = form.address.data.strip()
+    phone = form.phone.data
+    # Normalize DB.  Strip anything from phone that isn't a number
+    phone = re.sub('\D', '', phone) # e.g. (819) 392-1234 --> 8193921234
+    genres = form.genres.data                   # ['Alternative', 'Classical', 'Country']
+    seeking_talent = True if form.seeking_talent.data == 'Yes' else False
+    seeking_description = form.seeking_description.data.strip()
+    image_link = form.image_link.data.strip()
+    website = form.website.data.strip()
+    facebook_link = form.facebook_link.data.strip()
+    
+    # Redirect back to form if errors in form validation
+    if not form.validate():
+        flash( form.errors )
+        return redirect(url_for('create_venue_submission'))
+
+    else:
+        error_in_insert = False
+
+        # Insert form data into DB
+        try:
+            # creates the new venue with all fields but not genre yet
+            new_venue = Venue(name=name, city=city, state=state, address=address, phone=phone, \
+                seeking_talent=seeking_talent, seeking_description=seeking_description, image_link=image_link, \
+                website=website, facebook_link=facebook_link)
+            # genres can't take a list of strings, it needs to be assigned to db objects
+            # genres from the form is like: ['Alternative', 'Classical', 'Country']
+            for genre in genres:
+                # fetch_genre = session.query(Genre).filter_by(name=genre).one_or_none()  # Throws an exception if more than one returned, returns None if none
+                fetch_genre = Genre.query.filter_by(name=genre).one_or_none()  # Throws an exception if more than one returned, returns None if none
+                if fetch_genre:
+                    # if found a genre, append it to the list
+                    new_venue.genres.append(fetch_genre)
+
+                else:
+                    # fetch_genre was None. It's not created yet, so create it
+                    new_genre = Genre(name=genre)
+                    db.session.add(new_genre)
+                    new_venue.genres.append(new_genre)  # Create a new Genre item and append it
+
+            db.session.add(new_venue)
+            db.session.commit()
+        except Exception as e:
+            error_in_insert = True
+            print(f'Exception "{e}" in create_venue_submission()')
+            db.session.rollback()
+        finally:
+            db.session.close()
+
+        if not error_in_insert:
+            # on successful db insert, flash success
+            flash('Venue ' + request.form['name'] + ' was successfully listed!')
+            return redirect(url_for('index'))
+        else:
+            flash('An error occurred. Venue ' + name + ' could not be listed.')
+            print("Error in create_venue_submission()")
+            # return redirect(url_for('create_venue_submission'))
+            abort(500)
 
 
 @app.route('/venues/<venue_id>', methods=['DELETE'])
