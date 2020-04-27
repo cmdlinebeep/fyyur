@@ -40,7 +40,7 @@
 		{% endif %}
 	</div>
 	<div class="col-sm-6">
-		<img src="{{ artist.image_link }}" alt="Artist Image" />
+		{% if artist.image_link %}<img src="{{ artist.image_link }}" alt="Artist Image" />{% endif %}
 	</div>
 </div>
 <section>
@@ -71,6 +71,39 @@
 		{% endfor %}
 	</div>
 </section>
+<section>
+    <a href='/artists/{{ artist.id }}/edit'><button class="btn btn-default btn-sm">Edit Artist</button></a>
+    <button type="submit" onclick="deleteArtist(this)" data-id="{{ artist.id }}" class="btn btn-default btn-sm"
+        style="width: 100px;">Delete Artist</button>
+</section>
+<script>
+    function deleteArtist(e) {
+        const artist_id = e.dataset.id;
 
+        // New AJAX request to server to GET edit page
+        const request_delete = new XMLHttpRequest();
+
+        const url = `/artists/${artist_id}/delete`;
+        request_delete.open('GET', url);    // DELETE method is archaic and not really used in practice.
+                                            // To make this work, you need to enable CORS headers which in practice
+                                            // is easier to screw up and introduce security vulnerabilities!
+
+        // Callback on return
+        request_delete.onload = () => {
+            // Extract JSON data from request
+            const data = JSON.parse(request_delete.responseText);
+            
+            // If delete was successful, redirect
+            if (data['deleted'] == true) {
+                window.location.href = data['url'];
+            }
+        }
+
+        // Actually send the request
+        request_delete.send( null );   // No data, url request
+        return false;
+
+    }
+</script>
 {% endblock %}
 

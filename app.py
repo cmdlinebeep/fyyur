@@ -164,7 +164,8 @@ def index():
 def venues():
     
     # Get data on the venues and populate the data list.  Grouped by City
-    # venues = Venue.query.order_by(Venue.state, Venue.city.asc()).all() #  Order_by here not working since order changes later
+    # venues = Venue.query.order_by(Venue.state, Venue.city.asc()).all()
+    #  Order_by here not working since order changes is lost when we put it into a set.
     venues = Venue.query.all()
 
     data = []   # A list of dictionaries, where city, state, and venues are dictionary keys
@@ -487,7 +488,7 @@ def create_venue_submission():
             abort(500)
 
 
-@app.route('/venues/delete/<venue_id>', methods=['GET'])
+@app.route('/venues/<venue_id>/delete', methods=['GET'])
 def delete_venue(venue_id):
     # Deletes a venue based on AJAX call from the venue page
     venue = Venue.query.get(venue_id)
@@ -523,7 +524,7 @@ def delete_venue(venue_id):
 #  ----------------------------------------------------------------
 @app.route('/artists')
 def artists():
-    artists = Artist.query.all()
+    artists = Artist.query.order_by(Artist.name).all()  # Sort alphabetically
 
     data = []
     for artist in artists:
@@ -715,30 +716,139 @@ def show_artist(artist_id):
 #  ----------------------------------------------------------------
 @app.route('/artists/<int:artist_id>/edit', methods=['GET'])
 def edit_artist(artist_id):
-    form = ArtistForm()
+    # Taken mostly from edit_venue()
+
+    # Get the existing artist from the database
+    artist = Artist.query.get(artist_id)  # Returns object based on primary key, or None.  Guessing get is faster than filter_by
+    if not artist:
+        # User typed in a URL that doesn't exist, redirect home
+        return redirect(url_for('index'))
+    else:
+        # Otherwise, valid artist.  We can prepopulate the form with existing data like this.
+        # Prepopulate the form with the current values.  This is only used by template rendering!
+        form = ArtistForm(obj=artist)
+
+    # genres needs to be a list of genre strings for the template
+    genres = [ genre.name for genre in artist.genres ]
+    
     artist = {
-        "id": 4,
-        "name": "Guns N Petals",
-        "genres": ["Rock n Roll"],
-        "city": "San Francisco",
-        "state": "CA",
-        "phone": "326-123-5000",
-        "website": "https://www.gunsnpetalsband.com",
-        "facebook_link": "https://www.facebook.com/GunsNPetals",
-        "seeking_venue": True,
-        "seeking_description": "Looking for shows to perform at in the San Francisco Bay Area!",
-        "image_link": "https://images.unsplash.com/photo-1549213783-8284d0336c4f?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=crop&w=300&q=80"
+        "id": artist_id,
+        "name": artist.name,
+        "genres": genres,
+        # "address": artist.address,
+        "city": artist.city,
+        "state": artist.state,
+        # Put the dashes back into phone number
+        "phone": (artist.phone[:3] + '-' + artist.phone[3:6] + '-' + artist.phone[6:]),
+        "website": artist.website,
+        "facebook_link": artist.facebook_link,
+        "seeking_venue": artist.seeking_venue,
+        "seeking_description": artist.seeking_description,
+        "image_link": artist.image_link
     }
-    # TODO: populate form with fields from artist with ID <artist_id>
+
+    # artist = {
+    #     "id": 4,
+    #     "name": "Guns N Petals",
+    #     "genres": ["Rock n Roll"],
+    #     "city": "San Francisco",
+    #     "state": "CA",
+    #     "phone": "326-123-5000",
+    #     "website": "https://www.gunsnpetalsband.com",
+    #     "facebook_link": "https://www.facebook.com/GunsNPetals",
+    #     "seeking_venue": True,
+    #     "seeking_description": "Looking for shows to perform at in the San Francisco Bay Area!",
+    #     "image_link": "https://images.unsplash.com/photo-1549213783-8284d0336c4f?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=crop&w=300&q=80"
+    # }
     return render_template('forms/edit_artist.html', form=form, artist=artist)
 
 
 @app.route('/artists/<int:artist_id>/edit', methods=['POST'])
 def edit_artist_submission(artist_id):
-    # TODO: take values from the form submitted, and update existing
-    # artist record with ID <artist_id> using the new attributes
+    # Much of this code from edit_venue_submission()
+    form = ArtistForm()
 
-    return redirect(url_for('show_artist', artist_id=artist_id))
+    name = form.name.data.strip()
+    city = form.city.data.strip()
+    state = form.state.data
+    # address = form.address.data.strip()
+    phone = form.phone.data
+    # Normalize DB.  Strip anything from phone that isn't a number
+    phone = re.sub('\D', '', phone) # e.g. (819) 392-1234 --> 8193921234
+    genres = form.genres.data                   # ['Alternative', 'Classical', 'Country']
+    seeking_venue = True if form.seeking_venue.data == 'Yes' else False
+    seeking_description = form.seeking_description.data.strip()
+    image_link = form.image_link.data.strip()
+    website = form.website.data.strip()
+    facebook_link = form.facebook_link.data.strip()
+    
+    # Redirect back to form if errors in form validation
+    if not form.validate():
+        flash( form.errors )
+        return redirect(url_for('edit_artist_submission', artist_id=artist_id))
+
+    else:
+        error_in_update = False
+
+        # Insert form data into DB
+        try:
+            # First get the existing artist object
+            artist = Artist.query.get(artist_id)
+            # artist = Artist.query.filter_by(id=artist_id).one_or_none()
+
+            # Update fields
+            artist.name = name
+            artist.city = city
+            artist.state = state
+            # artist.address = address
+            artist.phone = phone
+
+            artist.seeking_venue = seeking_venue
+            artist.seeking_description = seeking_description
+            artist.image_link = image_link
+            artist.website = website
+            artist.facebook_link = facebook_link
+
+            # First we need to clear (delete) all the existing genres off the artist otherwise it just adds them
+            
+            # For some reason this didn't work! Probably has to do with flushing/lazy, etc.
+            # for genre in artist.genres:
+            #     artist.genres.remove(genre)
+                        
+            # artist.genres.clear()  # Either of these work.
+            artist.genres = []
+            
+            # genres can't take a list of strings, it needs to be assigned to db objects
+            # genres from the form is like: ['Alternative', 'Classical', 'Country']
+            for genre in genres:
+                fetch_genre = Genre.query.filter_by(name=genre).one_or_none()  # Throws an exception if more than one returned, returns None if none
+                if fetch_genre:
+                    # if found a genre, append it to the list
+                    artist.genres.append(fetch_genre)
+
+                else:
+                    # fetch_genre was None. It's not created yet, so create it
+                    new_genre = Genre(name=genre)
+                    db.session.add(new_genre)
+                    artist.genres.append(new_genre)  # Create a new Genre item and append it
+
+            # Attempt to save everything
+            db.session.commit()
+        except Exception as e:
+            error_in_update = True
+            print(f'Exception "{e}" in edit_artist_submission()')
+            db.session.rollback()
+        finally:
+            db.session.close()
+
+        if not error_in_update:
+            # on successful db update, flash success
+            flash('Artist ' + request.form['name'] + ' was successfully updated!')
+            return redirect(url_for('show_artist', artist_id=artist_id))
+        else:
+            flash('An error occurred. Artist ' + name + ' could not be updated.')
+            print("Error in edit_artist_submission()")
+            abort(500)
 
 
 @app.route('/venues/<int:venue_id>/edit', methods=['GET'])
@@ -955,15 +1065,36 @@ def create_artist_submission():
             abort(500)
 
 
-    # called upon submitting the new artist listing form
-    # TODO: insert form data as a new Venue record in the db, instead
-    # TODO: modify data to be the data object returned from db insertion
-
-    # on successful db insert, flash success
-    flash('Artist ' + request.form['name'] + ' was successfully listed!')
-    # TODO: on unsuccessful db insert, flash an error instead.
-    # e.g., flash('An error occurred. Artist ' + data.name + ' could not be listed.')
-    return render_template('pages/home.html')
+@app.route('/artists/<artist_id>/delete', methods=['GET'])
+def delete_artist(artist_id):
+    # Deletes a artist based on AJAX call from the artist page
+    artist = Artist.query.get(artist_id)
+    if not artist:
+        # User somehow faked this call, redirect home
+        return redirect(url_for('index'))
+    else:
+        error_on_delete = False
+        # Need to hang on to artist name since will be lost after delete
+        artist_name = artist.name
+        try:
+            db.session.delete(artist)
+            db.session.commit()
+        except:
+            error_on_delete = True
+            db.session.rollback()
+        finally:
+            db.session.close()
+        if error_on_delete:
+            flash(f'An error occurred deleting artist {artist_name}.')
+            print("Error in delete_artist()")
+            abort(500)
+        else:
+            # flash(f'Successfully removed artist {artist_name}')
+            # return redirect(url_for('artists'))
+            return jsonify({
+                'deleted': True,
+                'url': url_for('artists')
+            })
 
 
 #  Shows

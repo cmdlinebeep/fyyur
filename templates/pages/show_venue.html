@@ -86,7 +86,7 @@
         // New AJAX request to server to GET edit page
         const request_delete = new XMLHttpRequest();
 
-        const url = `/venues/delete/${venue_id}`;
+        const url = `/venues/${venue_id}/delete`;
         request_delete.open('GET', url);    // DELETE method is archaic and not really used in practice.
                                             // To make this work, you need to enable CORS headers which in practice
                                             // is easier to screw up and introduce security vulnerabilities!
