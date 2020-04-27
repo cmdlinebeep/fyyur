@@ -238,5 +238,3 @@ class ArtistForm(FlaskForm):
     facebook_link = StringField(
         'facebook_link', validators=[Optional(), URL()]    # Can chain these
     )
-
-# TODO IMPLEMENT NEW SHOW FORM

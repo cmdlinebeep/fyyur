@@ -8,8 +8,5 @@ DEBUG = True
 SQLALCHEMY_TRACK_MODIFICATIONS = False
 
 # Connect to the database
-
-
-# TODO IMPLEMENT DATABASE URL
-SQLALCHEMY_DATABASE_URI = 'postgres://postgres:a@localhost:5432/fyyur_app'
 # toy password for assignment (Windows required it), not real world best practice!
+SQLALCHEMY_DATABASE_URI = 'postgres://postgres:a@localhost:5432/fyyur_app'
