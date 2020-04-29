@@ -6,6 +6,7 @@ venv
 *.log
 notes.txt
 *.png
+*.zip
 
 # OS generated files #
 ######################
